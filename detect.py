@@ -121,14 +121,14 @@ def detect(save_img=False):
             if save_img:
                 if dataset.mode == 'images':
                     if out_mask:
-                        fg = cv2.bitwise_and(im0, im0, mask=mask)  # TODO: usar dst
+                        fg = cv2.bitwise_and(im0, im0, mask=mask, dst=im0)
 
                         mask = cv2.bitwise_not(mask)
-                        background = np.full(im0.shape, 255, dtype=np.uint8)
-                        bk = cv2.bitwise_or(background, background, mask=mask)
+                        background_white = np.full(im0.shape, 255, dtype=np.uint8)
+                        bk = cv2.bitwise_or(background_white, background_white, mask=mask, dst=background_white)
 
                         # combine foreground+background
-                        im0 = cv2.bitwise_or(fg, bk)
+                        im0 = cv2.bitwise_or(fg, bk, dst=fg)
 
                     cv2.imwrite(save_path, im0)
                 else:
