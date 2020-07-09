@@ -8,8 +8,8 @@ from utils.utils import *
 
 
 def detect(save_img=False):
-    out, source, weights, view_img, save_txt, imgsz = \
-        opt.output, opt.source, opt.weights, opt.view_img, opt.save_txt, opt.img_size
+    out, source, weights, view_img, save_txt, imgsz, out_mask = \
+        opt.output, opt.source, opt.weights, opt.view_img, opt.save_txt, opt.img_size, opt.mask
     webcam = source == '0' or source.startswith('rtsp') or source.startswith('http') or source.endswith('.txt')
 
     # Initialize
@@ -76,6 +76,10 @@ def detect(save_img=False):
             else:
                 p, s, im0 = path, '', im0s
 
+            if out_mask:
+                height, width, _ = im0.shape
+                mask = np.zeros((height, width), np.uint8)
+
             save_path = str(Path(out) / Path(p).name)
             txt_path = str(Path(out) / Path(p).stem) + ('_%g' % dataset.frame if dataset.mode == 'video' else '')
             s += '%gx%g ' % img.shape[2:]  # print string
@@ -97,8 +101,12 @@ def detect(save_img=False):
                             f.write(('%g ' * 5 + '\n') % (cls, *xywh))  # label format
 
                     if save_img or view_img:  # Add bbox to image
-                        label = '%s %.2f' % (names[int(cls)], conf)
-                        plot_one_box(xyxy, im0, label=label, color=colors[int(cls)], line_thickness=3)
+                        if out_mask:
+                            c1, c2 = (int(xyxy[0]), int(xyxy[1])), (int(xyxy[2]), int(xyxy[3]))
+                            cv2.rectangle(mask, c1, c2, 255, thickness=-1)
+                        else:
+                            label = '%s %.2f' % (names[int(cls)], conf)
+                            plot_one_box(xyxy, im0, label=label, color=colors[int(cls)], line_thickness=3)
 
             # Print time (inference + NMS)
             print('%sDone. (%.3fs)' % (s, t2 - t1))
@@ -112,6 +120,16 @@ def detect(save_img=False):
             # Save results (image with detections)
             if save_img:
                 if dataset.mode == 'images':
+                    if out_mask:
+                        fg = cv2.bitwise_and(im0, im0, mask=mask)  # TODO: usar dst
+
+                        mask = cv2.bitwise_not(mask)
+                        background = np.full(im0.shape, 255, dtype=np.uint8)
+                        bk = cv2.bitwise_or(background, background, mask=mask)
+
+                        # combine foreground+background
+                        im0 = cv2.bitwise_or(fg, bk)
+
                     cv2.imwrite(save_path, im0)
                 else:
                     if vid_path != save_path:  # new video
@@ -149,6 +167,7 @@ if __name__ == '__main__':
     parser.add_argument('--agnostic-nms', action='store_true', help='class-agnostic NMS')
     parser.add_argument('--augment', action='store_true', help='augmented inference')
     parser.add_argument('--update', action='store_true', help='update all models')
+    parser.add_argument('--mask', action='store_true', help='mask everything except detections')
     opt = parser.parse_args()
     print(opt)
 
