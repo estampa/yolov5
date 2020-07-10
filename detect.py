@@ -5,6 +5,7 @@ import torch.backends.cudnn as cudnn
 from models.experimental import *
 from utils.datasets import *
 from utils.utils import *
+from utils.livestream import *
 
 
 def detect(save_img=False):
@@ -121,14 +122,14 @@ def detect(save_img=False):
             if save_img:
                 if dataset.mode == 'images':
                     if out_mask:
-                        fg = cv2.bitwise_and(im0, im0, mask=mask, dst=im0)
+                        fg = cv2.bitwise_and(im0, im0, mask=mask)
 
                         mask = cv2.bitwise_not(mask)
                         background_white = np.full(im0.shape, 255, dtype=np.uint8)
-                        bk = cv2.bitwise_or(background_white, background_white, mask=mask, dst=background_white)
+                        bk = cv2.bitwise_or(background_white, background_white, mask=mask, dst=im0)
 
                         # combine foreground+background
-                        im0 = cv2.bitwise_or(fg, bk, dst=fg)
+                        im0 = cv2.bitwise_or(fg, bk, dst=background_white)
 
                     cv2.imwrite(save_path, im0)
                 else:
@@ -168,6 +169,7 @@ if __name__ == '__main__':
     parser.add_argument('--augment', action='store_true', help='augmented inference')
     parser.add_argument('--update', action='store_true', help='update all models')
     parser.add_argument('--mask', action='store_true', help='mask everything except detections')
+    parser.add_argument('--source-youtube-livestream', action='store_true', help='treat source as a youtube livestream')
     opt = parser.parse_args()
     print(opt)
 
@@ -176,5 +178,7 @@ if __name__ == '__main__':
             for opt.weights in ['yolov5s.pt', 'yolov5m.pt', 'yolov5l.pt', 'yolov5x.pt', 'yolov3-spp.pt']:
                 detect()
                 create_pretrained(opt.weights, opt.weights)
+        elif opt.source_youtube_livestream:
+            detect_livestream(opt)
         else:
             detect()

@@ -1,13 +1,47 @@
 import torch.backends.cudnn as cudnn
 
+import queue
+import threading
+
+import pafy
+
 from models.experimental import *
 from utils.datasets import *
 from utils.utils import *
 
+frames = queue.Queue()
+
+
+def livestream_thread(imgsz):
+    print(imgsz)
+
+    url = 'https://youtu.be/51djMAqsmIQ'  # SH63YaIWyK0
+    url_pafy = pafy.new(url)
+    # print(url_pafy)
+    # print(url_pafy.streams)
+    videoplay = url_pafy.getbest(preftype="mp4")  # webm
+
+    cap = cv2.VideoCapture(videoplay.url)
+    while True:
+        ret, frame0 = cap.read()
+        if not ret:
+            break
+
+        frame = letterbox(frame0, new_shape=imgsz)[0]
+
+        frame = frame[:, :, ::-1].transpose(2, 0, 1)  # BGR to RGB, to 3x416x416
+        frame = np.ascontiguousarray(frame)
+        # print(frame.shape)
+        if not frames.empty():
+            frames.get_nowait()
+        frames.put((frame, frame0))
+
+    cap.release()
+
+
 def detect_livestream(opt, save_img=False):
     out, source, weights, view_img, save_txt, imgsz, out_mask = \
         opt.output, opt.source, opt.weights, opt.view_img, opt.save_txt, opt.img_size, opt.mask
-    webcam = source == '0' or source.startswith('rtsp') or source.startswith('http') or source.endswith('.txt')
 
     # Initialize
     device = torch_utils.select_device(opt.device)
@@ -31,13 +65,7 @@ def detect_livestream(opt, save_img=False):
 
     # Set Dataloader
     vid_path, vid_writer = None, None
-    if webcam:
-        view_img = True
-        cudnn.benchmark = True  # set True to speed up constant image size inference
-        dataset = LoadStreams(source, img_size=imgsz)
-    else:
-        save_img = True
-        dataset = LoadImages(source, img_size=imgsz)
+    save_img = True
 
     # Get names and colors
     names = model.module.names if hasattr(model, 'module') else model.names
@@ -47,7 +75,17 @@ def detect_livestream(opt, save_img=False):
     t0 = time.time()
     img = torch.zeros((1, 3, imgsz, imgsz), device=device)  # init img
     _ = model(img.half() if half else img) if device.type != 'cpu' else None  # run once
-    for path, img, im0s, vid_cap in dataset:
+
+    t = threading.Thread(target=livestream_thread, args=(imgsz,))
+    t.daemon = True
+    t.start()
+
+    frame_count = 0
+
+    while True:
+        img, im0s = frames.get(block=True)
+        # print(img.shape)
+
         img = torch.from_numpy(img).to(device)
         img = img.half() if half else img.float()  # uint8 to fp16/32
         img /= 255.0  # 0 - 255 to 0.0 - 1.0
@@ -63,22 +101,21 @@ def detect_livestream(opt, save_img=False):
         t2 = torch_utils.time_synchronized()
 
         # Apply Classifier
+        # TODO: eliminar si mask
         if classify:
             pred = apply_classifier(pred, modelc, img, im0s)
 
         # Process detections
         for i, det in enumerate(pred):  # detections per image
-            if webcam:  # batch_size >= 1
-                p, s, im0 = path[i], '%g: ' % i, im0s[i].copy()
-            else:
-                p, s, im0 = path, '', im0s
+            p, s, im0 = 'livestream', '', im0s
 
             if out_mask:
                 height, width, _ = im0.shape
                 mask = np.zeros((height, width), np.uint8)
 
-            save_path = str(Path(out) / Path(p).name)
-            txt_path = str(Path(out) / Path(p).stem) + ('_%g' % dataset.frame if dataset.mode == 'video' else '')
+            save_path = str(Path(out) / Path(p).name) + '%05d.jpg' % frame_count
+            txt_path = str(Path(out) / Path(p).stem)
+            # txt_path = str(Path(out) / Path(p).stem) + ('_%g' % dataset.frame if dataset.mode == 'video' else '')
             s += '%gx%g ' % img.shape[2:]  # print string
             gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
             if det is not None and len(det):
@@ -105,6 +142,8 @@ def detect_livestream(opt, save_img=False):
                             label = '%s %.2f' % (names[int(cls)], conf)
                             plot_one_box(xyxy, im0, label=label, color=colors[int(cls)], line_thickness=3)
 
+            frame_count += 1
+
             # Print time (inference + NMS)
             print('%sDone. (%.3fs)' % (s, t2 - t1))
 
@@ -116,17 +155,17 @@ def detect_livestream(opt, save_img=False):
 
             # Save results (image with detections)
             if save_img:
-                if dataset.mode == 'images':
-                    if out_mask:
-                        fg = cv2.bitwise_and(im0, im0, mask=mask, dst=im0)
+                if out_mask:
+                    fg = cv2.bitwise_and(im0, im0, mask=mask)
 
-                        mask = cv2.bitwise_not(mask)
-                        background_white = np.full(im0.shape, 255, dtype=np.uint8)
-                        bk = cv2.bitwise_or(background_white, background_white, mask=mask, dst=background_white)
+                    mask = cv2.bitwise_not(mask)
+                    background_white = np.full(im0.shape, 255, dtype=np.uint8)
+                    bk = cv2.bitwise_or(background_white, background_white, mask=mask, dst=im0)
 
-                        # combine foreground+background
-                        im0 = cv2.bitwise_or(fg, bk, dst=fg)
+                    # combine foreground+background
+                    im0 = cv2.bitwise_or(fg, bk, dst=background_white)
 
+                if True:
                     cv2.imwrite(save_path, im0)
                 else:
                     if vid_path != save_path:  # new video
