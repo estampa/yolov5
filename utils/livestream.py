@@ -23,6 +23,8 @@ def livestream_thread(imgsz):
 
     cap = cv2.VideoCapture(videoplay.url)
     while True:
+        # TODO: apparently it gets bursts of frames, check if there is a way to get the time or space them
+
         ret, frame0 = cap.read()
         if not ret:
             break
@@ -156,6 +158,7 @@ def detect_livestream(opt, save_img=False):
             # Save results (image with detections)
             if save_img:
                 if out_mask:
+                    # TODO: create arrays just one time
                     fg = cv2.bitwise_and(im0, im0, mask=mask)
 
                     mask = cv2.bitwise_not(mask)
