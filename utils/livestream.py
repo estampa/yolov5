@@ -4,6 +4,7 @@ import queue
 import threading
 
 import pafy
+import pyfakewebcam
 
 from models.experimental import *
 from utils.datasets import *
@@ -111,6 +112,8 @@ def detect_livestream(opt, save_img=False):
 
     frame_count = 0
 
+    camera = pyfakewebcam.FakeWebcam('/dev/video0', 1280, 720)
+
     while True:
         img, im0s = frames_spaced.get(block=True)
         # print(img.shape)
@@ -181,7 +184,8 @@ def detect_livestream(opt, save_img=False):
             # Save results (image with detections)
             if save_img:
                 if True:
-                    cv2.imwrite(save_path, im0)
+                    # cv2.imwrite(save_path, im0)
+                    camera.schedule_frame(im0)
                 else:
                     if vid_path != save_path:  # new video
                         vid_path = save_path
