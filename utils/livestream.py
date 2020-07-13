@@ -14,34 +14,38 @@ frames_raw = queue.Queue()
 frames_spaced = queue.Queue()
 
 
-def livestream_thread(imgsz):
-    print(imgsz)
+class LiveStreamThread(Thread):
+    def __init__(self, imgsz):
+        Thread.__init__(self)
+        self.imgsz = imgsz
 
-    url = 'https://youtu.be/51djMAqsmIQ'  # SH63YaIWyK0
-    url_pafy = pafy.new(url)
-    # print(url_pafy)
-    print(url_pafy.streams)
-    videoplay = url_pafy.getbest(preftype="mp4")  # webm
+        url = 'https://youtu.be/51djMAqsmIQ'  # SH63YaIWyK0
+        url_pafy = pafy.new(url)
+        # print(url_pafy)
+        print(url_pafy.streams)
+        videoplay = url_pafy.getbest(preftype="mp4")  # webm
 
-    cap = cv2.VideoCapture(videoplay.url)
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    size = (int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
-            int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
-    print(fps, size)
-    while True:
-        ret, frame0 = cap.read()
-        if not ret:
-            break
+        self.cap = cv2.VideoCapture(videoplay.url)
+        self.fps = self.cap.get(cv2.CAP_PROP_FPS)
+        self.size = (int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
+                     int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
+        print(self.fps, self.size)
 
-        frame = letterbox(frame0, new_shape=imgsz)[0]
+    def run(self):
+        while True:
+            ret, frame0 = self.cap.read()
+            if not ret:
+                break
 
-        frame = frame[:, :, ::-1].transpose(2, 0, 1)  # BGR to RGB, to 3x416x416
-        frame = np.ascontiguousarray(frame)
-        frames_raw.put((frame, frame0))
+            frame = letterbox(frame0, new_shape=self.imgsz)[0]
 
-        # TODO: Empty sometimes after receiving a burst of frames?
+            frame = frame[:, :, ::-1].transpose(2, 0, 1)  # BGR to RGB, to 3x416x416
+            frame = np.ascontiguousarray(frame)
+            frames_raw.put((frame, frame0))
 
-    cap.release()
+            # TODO: Empty sometimes after receiving a burst of frames?
+
+        self.cap.release()
 
 
 class FrameSpacingThread(Thread):
@@ -102,17 +106,19 @@ def detect_livestream(opt, save_img=False):
     img = torch.zeros((1, 3, imgsz, imgsz), device=device)  # init img
     _ = model(img.half() if half else img) if device.type != 'cpu' else None  # run once
 
-    stream_thread = threading.Thread(target=livestream_thread, args=(imgsz,))
+    stream_thread = LiveStreamThread(imgsz)
     stream_thread.daemon = True
     stream_thread.start()
 
-    frame_spacing_thread = FrameSpacingThread(30)
+    stream_fps = stream_thread.fps
+    frame_spacing_thread = FrameSpacingThread(stream_fps)
     frame_spacing_thread.daemon = True
     frame_spacing_thread.start()
 
     frame_count = 0
 
-    camera = pyfakewebcam.FakeWebcam('/dev/video0', 1280, 720)
+    stream_width, stream_height = stream_thread.size
+    camera = pyfakewebcam.FakeWebcam('/dev/video0', stream_width, stream_height)
 
     while True:
         img, im0s = frames_spaced.get(block=True)
