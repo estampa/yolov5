@@ -9,7 +9,8 @@ from models.experimental import *
 from utils.datasets import *
 from utils.utils import *
 
-frames = queue.Queue()
+frames_raw = queue.Queue()
+frames_spaced = queue.Queue()
 
 
 def livestream_thread(imgsz):
@@ -18,13 +19,15 @@ def livestream_thread(imgsz):
     url = 'https://youtu.be/51djMAqsmIQ'  # SH63YaIWyK0
     url_pafy = pafy.new(url)
     # print(url_pafy)
-    # print(url_pafy.streams)
+    print(url_pafy.streams)
     videoplay = url_pafy.getbest(preftype="mp4")  # webm
 
     cap = cv2.VideoCapture(videoplay.url)
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    size = (int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
+            int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
+    print(fps, size)
     while True:
-        # TODO: apparently it gets bursts of frames, check if there is a way to get the time or space them
-
         ret, frame0 = cap.read()
         if not ret:
             break
@@ -33,12 +36,32 @@ def livestream_thread(imgsz):
 
         frame = frame[:, :, ::-1].transpose(2, 0, 1)  # BGR to RGB, to 3x416x416
         frame = np.ascontiguousarray(frame)
-        # print(frame.shape)
-        if not frames.empty():
-            frames.get_nowait()
-        frames.put((frame, frame0))
+        frames_raw.put((frame, frame0))
+
+        # TODO: Empty sometimes after receiving a burst of frames?
 
     cap.release()
+
+
+class FrameSpacingThread(Thread):
+    def __init__(self, fps):
+        Thread.__init__(self)
+        self.fps = fps
+
+    def run(self):
+        # TODO: avoid adding small delays to time
+        while True:
+            start_time = time.time()
+
+            frame = frames_raw.get(block=True)
+            if not frames_spaced.empty():
+                frames_spaced.get_nowait()
+            frames_spaced.put(frame)
+
+            wait_time = max(1/self.fps - (time.time() - start_time), 0.000000001)
+            time.sleep(wait_time)
+            # print("my thread %.03f %.03f %0.3f" % (time.time(), wait_time, time.time() - last_time))
+            # print("my thread %d" % frames_raw.qsize())
 
 
 def detect_livestream(opt, save_img=False):
@@ -78,14 +101,18 @@ def detect_livestream(opt, save_img=False):
     img = torch.zeros((1, 3, imgsz, imgsz), device=device)  # init img
     _ = model(img.half() if half else img) if device.type != 'cpu' else None  # run once
 
-    t = threading.Thread(target=livestream_thread, args=(imgsz,))
-    t.daemon = True
-    t.start()
+    stream_thread = threading.Thread(target=livestream_thread, args=(imgsz,))
+    stream_thread.daemon = True
+    stream_thread.start()
+
+    frame_spacing_thread = FrameSpacingThread(30)
+    frame_spacing_thread.daemon = True
+    frame_spacing_thread.start()
 
     frame_count = 0
 
     while True:
-        img, im0s = frames.get(block=True)
+        img, im0s = frames_spaced.get(block=True)
         # print(img.shape)
 
         img = torch.from_numpy(img).to(device)
