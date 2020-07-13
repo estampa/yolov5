@@ -111,10 +111,6 @@ def detect_livestream(opt, save_img=False):
         for i, det in enumerate(pred):  # detections per image
             p, s, im0 = 'livestream', '', im0s
 
-            if out_mask:
-                height, width, _ = im0.shape
-                mask = np.zeros((height, width), np.uint8)
-
             save_path = str(Path(out) / Path(p).name) + '%05d.jpg' % frame_count
             txt_path = str(Path(out) / Path(p).stem)
             # txt_path = str(Path(out) / Path(p).stem) + ('_%g' % dataset.frame if dataset.mode == 'video' else '')
@@ -139,7 +135,7 @@ def detect_livestream(opt, save_img=False):
                     if save_img or view_img:  # Add bbox to image
                         if out_mask:
                             c1, c2 = (int(xyxy[0]), int(xyxy[1])), (int(xyxy[2]), int(xyxy[3]))
-                            cv2.rectangle(mask, c1, c2, 255, thickness=-1)
+                            cv2.rectangle(im0, c1, c2, (255, 255, 255), thickness=-1)
                         else:
                             label = '%s %.2f' % (names[int(cls)], conf)
                             plot_one_box(xyxy, im0, label=label, color=colors[int(cls)], line_thickness=3)
@@ -157,17 +153,6 @@ def detect_livestream(opt, save_img=False):
 
             # Save results (image with detections)
             if save_img:
-                if out_mask:
-                    # TODO: create arrays just one time
-                    fg = cv2.bitwise_and(im0, im0, mask=mask)
-
-                    mask = cv2.bitwise_not(mask)
-                    background_white = np.full(im0.shape, 255, dtype=np.uint8)
-                    bk = cv2.bitwise_or(background_white, background_white, mask=mask, dst=im0)
-
-                    # combine foreground+background
-                    im0 = cv2.bitwise_or(fg, bk, dst=background_white)
-
                 if True:
                     cv2.imwrite(save_path, im0)
                 else:
