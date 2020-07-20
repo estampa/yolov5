@@ -190,8 +190,9 @@ def detect_livestream(opt, save_img=False):
             # Save results (image with detections)
             if save_img:
                 if True:
+                    im0_rgb = cv2.cvtColor(im0, cv2.COLOR_BGR2RGB)
                     # cv2.imwrite(save_path, im0)
-                    camera.schedule_frame(im0)
+                    camera.schedule_frame(im0_rgb)
                 else:
                     if vid_path != save_path:  # new video
                         vid_path = save_path
