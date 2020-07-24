@@ -1,5 +1,6 @@
 import torch.backends.cudnn as cudnn
 
+import time
 import queue
 import threading
 
@@ -19,8 +20,11 @@ class LiveStreamThread(Thread):
         Thread.__init__(self)
         self.imgsz = imgsz
 
-        url = 'https://youtu.be/51djMAqsmIQ'  # SH63YaIWyK0
-        url_pafy = pafy.new(url)
+        self.url = 'https://youtu.be/51djMAqsmIQ'  # SH63YaIWyK0
+        self.get_capture()
+
+    def get_capture(self):
+        url_pafy = pafy.new(self.url)
         # print(url_pafy)
         print(url_pafy.streams)
         videoplay = url_pafy.getbest(preftype="mp4")  # webm
@@ -31,7 +35,7 @@ class LiveStreamThread(Thread):
                      int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
         print(self.fps, self.size)
 
-    def run(self):
+    def capture(self):
         while True:
             ret, frame0 = self.cap.read()
             if not ret:
@@ -45,7 +49,15 @@ class LiveStreamThread(Thread):
 
             # TODO: Empty sometimes after receiving a burst of frames?
 
+        print("%s Video capture failed" % time.strftime("%Y-%m-%d %H:%M"))
         self.cap.release()
+
+    def run(self):
+        while True:
+            print("%s Starting a capture" % time.strftime("%Y-%m-%d %H:%M"))
+            self.capture()
+            time.sleep(30)
+            self.get_capture()
 
 
 class FrameSpacingThread(Thread):
@@ -179,7 +191,7 @@ def detect_livestream(opt, save_img=False):
             frame_count += 1
 
             # Print time (inference + NMS)
-            print('%sDone. (%.3fs)' % (s, t2 - t1))
+            # print('%sDone. (%.3fs)' % (s, t2 - t1))
 
             # Stream results
             if view_img:
